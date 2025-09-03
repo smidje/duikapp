@@ -1,16 +1,15 @@
+
 import streamlit as st
 import pandas as pd
 from pathlib import Path
 import datetime
 import io
 
-# ==== Bestanden ====
 DUIKERS_FILE = "duikers.xlsx"
 PLACES_FILE = "duikplaatsen.xlsx"
 DUIKEN_FILE = "duiken.xlsx"
 LOGO_FILE = "logo.jpg"
 
-# ==== Helper opslag ====
 def init_file(file, columns):
     path = Path(file)
     if not path.exists():
@@ -38,7 +37,6 @@ def refresh_caches():
     load_places.clear()
     load_duiken.clear()
 
-# ==== Auth ====
 def check_login(username, password):
     return username == "admin" and password == "1234"
 
@@ -84,7 +82,6 @@ def login_page():
             st.error("Ongeldige login")
     st.markdown("<div class='footer-note'>Tip: admin / 1234</div></div>", unsafe_allow_html=True)
 
-# ==== UI Chrome ====
 def header():
     st.markdown(
         f"""
@@ -107,7 +104,6 @@ def header():
         unsafe_allow_html=True
     )
 
-# ==== Pagina's ====
 def page_duiken():
     header()
     st.subheader("Nieuwe duik registreren")
@@ -195,11 +191,59 @@ def page_overzicht():
     f = f.sort_values(["Datum", "Plaats", "Duiker"])
     st.dataframe(f, use_container_width=True, hide_index=True)
 
+    st.markdown("**Export**")
     st.download_button("Download CSV", data=f.to_csv(index=False).encode("utf-8"), file_name="duiken_export.csv", mime="text/csv")
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
         f.to_excel(writer, index=False, sheet_name="Duiken")
     st.download_button("Download Excel", data=output.getvalue(), file_name="duiken_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+def page_afrekening():
+    header()
+    st.subheader("Afrekening per duiker")
+
+    df = load_duiken().copy()
+    if df.empty:
+        st.info("Nog geen duiken geregistreerd.")
+        return
+
+    df["Datum"] = pd.to_datetime(df["Datum"]).dt.date
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        min_d = df["Datum"].min()
+        max_d = df["Datum"].max()
+        daterange = st.date_input("Periode", (min_d, max_d), key="afr_range")
+    with c2:
+        vergoeding = st.number_input("Bedrag per duik (€)", min_value=0.0, step=1.0, value=5.0)
+    with c3:
+        plaats_filter = st.selectbox("Duikplaats (optioneel)", ["Alle"] + sorted(df["Plaats"].dropna().unique().tolist()), index=0)
+
+    start, end = daterange if isinstance(daterange, tuple) else (df["Datum"].min(), df["Datum"].max())
+    mask = (df["Datum"] >= start) & (df["Datum"] <= end)
+    if plaats_filter != "Alle":
+        mask &= df["Plaats"] == plaats_filter
+
+    selectie = df.loc[mask].copy()
+    if selectie.empty:
+        st.warning("Geen duiken in de gekozen periode/filters.")
+        return
+
+    per_duiker = selectie.groupby("Duiker").size().reset_index(name="AantalDuiken")
+    per_duiker["Bedrag"] = (per_duiker["AantalDuiken"] * vergoeding).round(2)
+    per_duiker = per_duiker.sort_values("Duiker").reset_index(drop=True)
+
+    st.subheader("Resultaat per duiker")
+    st.dataframe(per_duiker, use_container_width=True, hide_index=True)
+
+    totaal = per_duiker["Bedrag"].sum()
+    st.metric("Totaal uit te keren", f"€ {totaal:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    xbuf = io.BytesIO()
+    with pd.ExcelWriter(xbuf, engine="openpyxl") as writer:
+        per_duiker.to_excel(writer, index=False, sheet_name="Afrekening")
+        selectie.sort_values(["Datum", "Plaats", "Duiker"]).to_excel(writer, index=False, sheet_name="Detail")
+    st.download_button("⬇️ Download Afrekening (Excel)", data=xbuf.getvalue(), file_name="Afrekening.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 def page_beheer():
     header()
@@ -220,6 +264,7 @@ def page_beheer():
             st.warning("Leeg of al bestaand.")
 
     st.markdown("---")
+
     st.markdown("### Duikplaatsen")
     places_df = load_places().copy()
     st.dataframe(places_df, use_container_width=True, hide_index=True)
@@ -234,7 +279,22 @@ def page_beheer():
         else:
             st.warning("Leeg of al bestaand.")
 
-# ==== Main ====
+    st.markdown("---")
+    st.subheader("Backup & Herstel")
+    import zipfile, os
+    if st.button("Download backup (zip)"):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zipf:
+            for f in [DUIKERS_FILE, PLACES_FILE, DUIKEN_FILE]:
+                if Path(f).exists():
+                    zipf.write(f, os.path.basename(f))
+        st.download_button(
+            "Download duikapp_backup.zip",
+            data=buffer.getvalue(),
+            file_name="duikapp_backup.zip",
+            mime="application/zip"
+        )
+
 def main():
     st.set_page_config(page_title="ANWW Duikapp", layout="wide")
     if "logged_in" not in st.session_state:
@@ -244,12 +304,14 @@ def main():
         login_page()
         return
 
-    tabs = st.tabs(["Duiken invoeren", "Overzicht", "Beheer lijsten"])
+    tabs = st.tabs(["Duiken invoeren", "Overzicht", "Afrekening", "Beheer lijsten"])
     with tabs[0]:
         page_duiken()
     with tabs[1]:
         page_overzicht()
     with tabs[2]:
+        page_afrekening()
+    with tabs[3]:
         page_beheer()
 
 if __name__ == "__main__":
