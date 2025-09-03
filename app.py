@@ -15,11 +15,11 @@ def init_file(file, columns):
     path = Path(file)
     if not path.exists():
         df = pd.DataFrame(columns=columns)
-        df.to_excel(file, index=False, engine="xlsxwriter")
+        df.to_excel(file, index=False, engine="openpyxl")
     return pd.read_excel(file, engine="openpyxl")
 
 def save_file(file, df):
-    df.to_excel(file, index=False, engine="xlsxwriter")
+    df.to_excel(file, index=False, engine="openpyxl")
 
 @st.cache_data(show_spinner=False)
 def load_duikers():
