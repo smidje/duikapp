@@ -10,6 +10,35 @@ PLACES_FILE = "duikplaatsen.xlsx"
 DUIKEN_FILE = "duiken.xlsx"
 LOGO_FILE = "logo.jpg"
 
+st.set_page_config(page_title="ANWW Duikapp", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    :root {
+        --primary:#2563eb;
+        --bg:#f7f9fc;
+        --card:#ffffff;
+        --text:#0f172a;
+        --muted:#6b7280;
+        --border:#e5e7eb;
+    }
+    .stApp { background: var(--bg); }
+    .app-card { background: var(--card); border:1px solid var(--border);
+        border-radius:16px; padding:18px; box-shadow: 0 8px 24px rgba(2,6,23,0.06); }
+    .app-header { display:flex; align-items:center; gap:14px; padding: 6px 0 12px 0; }
+    .app-header img {height:52px; border-radius:10px;}
+    .app-title {margin:0; font-size:26px; font-weight:800; color:var(--text);}
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        padding:10px 14px; background:#eef2ff; border-radius:12px 12px 0 0; border:1px solid #e0e7ff;
+    }
+    .stButton>button[kind="primary"] { background: var(--primary); border-radius:12px; padding:8px 16px; border:0; }
+    .stButton>button { border-radius:12px; }
+    </style>
+    """, unsafe_allow_html=True
+)
+
 def init_file(file, columns):
     path = Path(file)
     if not path.exists():
@@ -33,9 +62,7 @@ def load_duiken():
     return init_file(DUIKEN_FILE, ["Datum", "Plaats", "Duiker"])
 
 def refresh_caches():
-    load_duikers.clear()
-    load_places.clear()
-    load_duiken.clear()
+    load_duikers.clear(); load_places.clear(); load_duiken.clear()
 
 def check_login(username, password):
     return username == "admin" and password == "1234"
@@ -45,274 +72,184 @@ def login_page():
         f"""
         <style>
         .stApp {{
-            background: url('{LOGO_FILE}') no-repeat center center fixed;
-            background-size: cover;
+            background: url('{LOGO_FILE}') no-repeat center center fixed !important;
+            background-size: cover !important;
         }}
         .login-box {{
-            background: rgba(255, 255, 255, 0.88);
+            background: rgba(255,255,255,0.88);
             padding: 2rem;
             border-radius: 18px;
             width: 360px;
             margin: auto;
             margin-top: 12vh;
             backdrop-filter: blur(2px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            box-shadow: 0 10px 30px rgba(2,6,23,0.25);
         }}
-        .login-title {{
-            margin: 0 0 10px 0;
-            font-weight: 700;
-            letter-spacing: .3px;
-        }}
-        .footer-note {{
-            margin-top: 10px;
-            font-size: 12px;
-            opacity: .75;
-        }}
+        .login-title {{ margin:0 0 12px 0; font-weight:800; letter-spacing:.2px; }}
         </style>
         """, unsafe_allow_html=True
     )
-    st.markdown("<div class='login-box'><h2 class='login-title'>ANWW Duikapp</h2><p>Log in om verder te gaan</p>", unsafe_allow_html=True)
-    username = st.text_input("Gebruikersnaam", key="user")
-    password = st.text_input("Wachtwoord", type="password", key="pw")
-    if st.button("Login", type="primary", use_container_width=True):
+    st.markdown("<div class='login-box app-card'><h2 class='login-title'>ANWW Duikapp</h2><p>Log in om verder te gaan</p>", unsafe_allow_html=True)
+    username = st.text_input("Gebruikersnaam", key="login_user")
+    password = st.text_input("Wachtwoord", type="password", key="login_pw")
+    if st.button("Login", type="primary", use_container_width=True, key="login_btn"):
         if check_login(username, password):
-            st.session_state.logged_in = True
-            st.rerun()
+            st.session_state.logged_in = True; st.rerun()
         else:
             st.error("Ongeldige login")
-    st.markdown("<div class='footer-note'>Tip: admin / 1234</div></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def header():
     st.markdown(
         f"""
-        <style>
-        .app-header {{
-            display:flex; align-items:center; gap:12px; padding: 10px 0 0 0;
-        }}
-        .app-header img {{
-            height: 48px; border-radius: 8px;
-        }}
-        .app-title {{
-            margin:0; font-size: 24px; font-weight: 700;
-        }}
-        </style>
         <div class="app-header">
             <img src="{LOGO_FILE}" alt="logo" />
             <h2 class="app-title">ANWW Duikapp</h2>
         </div>
-        """,
-        unsafe_allow_html=True
+        """, unsafe_allow_html=True
     )
 
 def page_duiken():
     header()
-    st.subheader("Nieuwe duik registreren")
-
-    duikers_df = load_duikers().copy()
-    places_df = load_places().copy()
-
+    st.markdown("### Nieuwe duik registreren")
+    duikers_df = load_duikers().copy(); places_df = load_places().copy()
     plaatsen = places_df["Plaats"].dropna().astype(str).tolist() if not places_df.empty else []
     duikers_lijst = duikers_df["Naam"].dropna().astype(str).tolist() if not duikers_df.empty else []
 
-    col1, col2 = st.columns(2)
-    with col1:
-        datum = st.date_input("Datum", datetime.date.today())
-    with col2:
-        if plaatsen:
-            plaats = st.selectbox("Duikplaats", plaatsen, index=0)
-        else:
-            st.info("Nog geen duikplaatsen. Voeg er hieronder één toe.")
-            plaats = ""
+    c1,c2 = st.columns(2)
+    with c1:
+        datum = st.date_input("Datum", datetime.date.today(), key="duiken_datum")
+    with c2:
+        plaats = st.selectbox("Duikplaats", plaatsen, index=0, key="duiken_plaats") if plaatsen else ""
 
-    with st.expander("Duikplaats toevoegen", expanded=(len(plaatsen) == 0)):
-        nieuwe_plaats = st.text_input("Nieuwe duikplaats")
-        if st.button("Voeg duikplaats toe"):
+    with st.expander("Duikplaats toevoegen", expanded=(len(plaatsen)==0)):
+        nieuwe_plaats = st.text_input("Nieuwe duikplaats", key="duiken_nieuwe_plaats")
+        if st.button("Voeg duikplaats toe", key="duiken_btn_plaats_toevoegen"):
             if nieuwe_plaats and nieuwe_plaats not in plaatsen:
-                places_df.loc[len(places_df)] = [nieuwe_plaats]
-                save_file(PLACES_FILE, places_df)
-                refresh_caches()
-                st.success(f"Duikplaats '{nieuwe_plaats}' toegevoegd.")
-                st.rerun()
-            else:
-                st.warning("Voer een unieke naam in.")
+                places_df.loc[len(places_df)] = [nieuwe_plaats]; save_file(PLACES_FILE, places_df)
+                refresh_caches(); st.success(f"Duikplaats '{nieuwe_plaats}' toegevoegd."); st.rerun()
+            else: st.warning("Voer een unieke naam in.")
 
-    geselecteerde_duikers = st.multiselect("Kies duikers", duikers_lijst, help="Selecteer één of meerdere duikers")
-    nieuwe_duiker = st.text_input("Nieuwe duiker toevoegen")
-    if st.button("Voeg duiker toe"):
+    geselecteerde_duikers = st.multiselect("Kies duikers", duikers_lijst, key="duiken_sel_duikers")
+    nieuwe_duiker = st.text_input("Nieuwe duiker toevoegen", key="duiken_nieuwe_duiker")
+    if st.button("Voeg duiker toe", key="duiken_btn_duiker_toevoegen"):
         if nieuwe_duiker and nieuwe_duiker not in duikers_lijst:
-            duikers_df.loc[len(duikers_df)] = [nieuwe_duiker]
-            save_file(DUIKERS_FILE, duikers_df)
-            refresh_caches()
-            st.success(f"Duiker '{nieuwe_duiker}' toegevoegd.")
-            st.rerun()
-        else:
-            st.warning("Voer een unieke naam in.")
+            duikers_df.loc[len(duikers_df)] = [nieuwe_duiker]; save_file(DUIKERS_FILE, duikers_df)
+            refresh_caches(); st.success(f"Duiker '{nieuwe_duiker}' toegevoegd."); st.rerun()
+        else: st.warning("Voer een unieke naam in.")
 
-    if st.button("Opslaan duik(en)", type="primary", disabled=(not plaats or len(geselecteerde_duikers) == 0)):
+    disabled = (not plaats) or (len(geselecteerde_duikers)==0)
+    if st.button("Opslaan duik(en)", type="primary", disabled=disabled, key="duiken_opslaan"):
         duiken_df = load_duiken().copy()
         for naam in geselecteerde_duikers:
             duiken_df.loc[len(duiken_df)] = [datum, plaats, naam]
         duiken_df["Datum"] = pd.to_datetime(duiken_df["Datum"]).dt.date
-        save_file(DUIKEN_FILE, duiken_df)
-        refresh_caches()
+        save_file(DUIKEN_FILE, duiken_df); refresh_caches()
         st.success(f"{len(geselecteerde_duikers)} duik(en) opgeslagen voor {plaats} op {datum}.")
 
 def page_overzicht():
     header()
-    st.subheader("Overzicht duiken")
-
+    st.markdown("### Overzicht duiken")
     df = load_duiken().copy()
-    if df.empty:
-        st.info("Nog geen duiken geregistreerd.")
-        return
-
+    if df.empty: st.info("Nog geen duiken geregistreerd."); return
     df["Datum"] = pd.to_datetime(df["Datum"]).dt.date
-
-    c1, c2, c3 = st.columns([1,1,2])
+    c1,c2,c3 = st.columns([1,1,2])
     with c1:
-        min_d = df["Datum"].min()
-        max_d = df["Datum"].max()
-        daterange = st.date_input("Datumrange", (min_d, max_d))
+        min_d, max_d = df["Datum"].min(), df["Datum"].max()
+        daterange = st.date_input("Datumrange", (min_d, max_d), key="overzicht_range")
     with c2:
         plaatsen = ["Alle"] + sorted(df["Plaats"].dropna().unique().tolist())
-        plaats_filter = st.selectbox("Duikplaats", plaatsen, index=0)
+        plaats_filter = st.selectbox("Duikplaats", plaatsen, index=0, key="overzicht_plaats")
     with c3:
         duikers = ["Alle"] + sorted(df["Duiker"].dropna().unique().tolist())
-        duiker_filter = st.selectbox("Duiker", duikers, index=0)
-
+        duiker_filter = st.selectbox("Duiker", duikers, index=0, key="overzicht_duiker")
     f = df.copy()
-    start, end = daterange if isinstance(daterange, tuple) else (df["Datum"].min(), df["Datum"].max())
-    f = f[(f["Datum"] >= start) & (f["Datum"] <= end)]
-    if plaats_filter != "Alle":
-        f = f[f["Plaats"] == plaats_filter]
-    if duiker_filter != "Alle":
-        f = f[f["Duiker"] == duiker_filter]
-
-    f = f.sort_values(["Datum", "Plaats", "Duiker"])
-    st.dataframe(f, use_container_width=True, hide_index=True)
-
-    st.markdown("**Export**")
-    st.download_button("Download CSV", data=f.to_csv(index=False).encode("utf-8"), file_name="duiken_export.csv", mime="text/csv")
+    start,end = daterange if isinstance(daterange, tuple) else (df["Datum"].min(), df["Datum"].max())
+    f = f[(f["Datum"]>=start)&(f["Datum"]<=end)]
+    if plaats_filter!="Alle": f = f[f["Plaats"]==plaats_filter]
+    if duiker_filter!="Alle": f = f[f["Duiker"]==duiker_filter]
+    f = f.sort_values(["Datum","Plaats","Duiker"])
+    st.markdown("<div class='app-card'>", unsafe_allow_html=True); st.dataframe(f, use_container_width=True, hide_index=True); st.markdown("</div>", unsafe_allow_html=True)
+    st.download_button("Download CSV", data=f.to_csv(index=False).encode("utf-8"), file_name="duiken_export.csv", mime="text/csv", key="overzicht_csv")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         f.to_excel(writer, index=False, sheet_name="Duiken")
-    st.download_button("Download Excel", data=output.getvalue(), file_name="duiken_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button("Download Excel", data=output.getvalue(), file_name="duiken_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="overzicht_xlsx")
 
 def page_afrekening():
     header()
-    st.subheader("Afrekening per duiker")
-
+    st.markdown("### Afrekening per duiker")
     df = load_duiken().copy()
-    if df.empty:
-        st.info("Nog geen duiken geregistreerd.")
-        return
-
+    if df.empty: st.info("Nog geen duiken geregistreerd."); return
     df["Datum"] = pd.to_datetime(df["Datum"]).dt.date
-
-    c1, c2, c3 = st.columns(3)
+    c1,c2,c3 = st.columns(3)
     with c1:
-        min_d = df["Datum"].min()
-        max_d = df["Datum"].max()
+        min_d, max_d = df["Datum"].min(), df["Datum"].max()
         daterange = st.date_input("Periode", (min_d, max_d), key="afr_range")
     with c2:
-        vergoeding = st.number_input("Bedrag per duik (€)", min_value=0.0, step=1.0, value=5.0)
+        vergoeding = st.number_input("Bedrag per duik (€)", min_value=0.0, step=1.0, value=5.0, key="afr_bedrag")
     with c3:
-        plaats_filter = st.selectbox("Duikplaats (optioneel)", ["Alle"] + sorted(df["Plaats"].dropna().unique().tolist()), index=0)
-
-    start, end = daterange if isinstance(daterange, tuple) else (df["Datum"].min(), df["Datum"].max())
-    mask = (df["Datum"] >= start) & (df["Datum"] <= end)
-    if plaats_filter != "Alle":
-        mask &= df["Plaats"] == plaats_filter
-
+        plaats_filter = st.selectbox("Duikplaats (optioneel)", ["Alle"] + sorted(df["Plaats"].dropna().unique().tolist()), index=0, key="afr_plaats")
+    start,end = daterange if isinstance(daterange, tuple) else (df["Datum"].min(), df["Datum"].max())
+    mask = (df["Datum"]>=start)&(df["Datum"]<=end)
+    if plaats_filter!="Alle": mask &= df["Plaats"]==plaats_filter
     selectie = df.loc[mask].copy()
-    if selectie.empty:
-        st.warning("Geen duiken in de gekozen periode/filters.")
-        return
-
+    if selectie.empty: st.warning("Geen duiken in de gekozen periode/filters."); return
     per_duiker = selectie.groupby("Duiker").size().reset_index(name="AantalDuiken")
-    per_duiker["Bedrag"] = (per_duiker["AantalDuiken"] * vergoeding).round(2)
+    per_duiker["Bedrag"] = (per_duiker["AantalDuiken"]*vergoeding).round(2)
     per_duiker = per_duiker.sort_values("Duiker").reset_index(drop=True)
-
-    st.subheader("Resultaat per duiker")
-    st.dataframe(per_duiker, use_container_width=True, hide_index=True)
-
+    st.markdown("<div class='app-card'>", unsafe_allow_html=True); st.dataframe(per_duiker, use_container_width=True, hide_index=True); st.markdown("</div>", unsafe_allow_html=True)
     totaal = per_duiker["Bedrag"].sum()
-    st.metric("Totaal uit te keren", f"€ {totaal:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
+    st.metric("Totaal uit te keren", f"€ {totaal:,.2f}".replace(",", "X").replace(".", ",").replace("X","."))
     xbuf = io.BytesIO()
     with pd.ExcelWriter(xbuf, engine="openpyxl") as writer:
         per_duiker.to_excel(writer, index=False, sheet_name="Afrekening")
-        selectie.sort_values(["Datum", "Plaats", "Duiker"]).to_excel(writer, index=False, sheet_name="Detail")
-    st.download_button("⬇️ Download Afrekening (Excel)", data=xbuf.getvalue(), file_name="Afrekening.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        selectie.sort_values(["Datum","Plaats","Duiker"]).to_excel(writer, index=False, sheet_name="Detail")
+    st.download_button("⬇️ Download Afrekening (Excel)", data=xbuf.getvalue(), file_name="Afrekening.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="afr_xlsx")
 
 def page_beheer():
     header()
-    st.subheader("Beheer lijsten")
-
-    st.markdown("### Duikers")
+    st.markdown("### Beheer lijsten")
+    st.markdown("#### Duikers")
     duikers_df = load_duikers().copy()
     st.dataframe(duikers_df, use_container_width=True, hide_index=True)
-    new_d = st.text_input("Nieuwe duiker naam")
-    if st.button("Toevoegen aan duikers"):
+    new_d = st.text_input("Nieuwe duiker naam", key="beheer_nieuwe_duiker")
+    if st.button("Toevoegen aan duikers", key="beheer_btn_duiker_toevoegen"):
         if new_d and (new_d not in duikers_df["Naam"].astype(str).tolist()):
-            duikers_df.loc[len(duikers_df)] = [new_d]
-            save_file(DUIKERS_FILE, duikers_df)
-            refresh_caches()
-            st.success(f"Duiker '{new_d}' toegevoegd.")
-            st.rerun()
-        else:
-            st.warning("Leeg of al bestaand.")
-
+            duikers_df.loc[len(duikers_df)] = [new_d]; save_file(DUIKERS_FILE, duikers_df)
+            refresh_caches(); st.success(f"Duiker '{new_d}' toegevoegd."); st.rerun()
+        else: st.warning("Leeg of al bestaand.")
     st.markdown("---")
-
-    st.markdown("### Duikplaatsen")
+    st.markdown("#### Duikplaatsen")
     places_df = load_places().copy()
     st.dataframe(places_df, use_container_width=True, hide_index=True)
-    new_p = st.text_input("Nieuwe duikplaats")
-    if st.button("Toevoegen aan duikplaatsen"):
+    new_p = st.text_input("Nieuwe duikplaats", key="beheer_nieuwe_plaats")
+    if st.button("Toevoegen aan duikplaatsen", key="beheer_btn_plaats_toevoegen"):
         if new_p and (new_p not in places_df["Plaats"].astype(str).tolist()):
-            places_df.loc[len(places_df)] = [new_p]
-            save_file(PLACES_FILE, places_df)
-            refresh_caches()
-            st.success(f"Duikplaats '{new_p}' toegevoegd.")
-            st.rerun()
-        else:
-            st.warning("Leeg of al bestaand.")
-
+            places_df.loc[len(places_df)] = [new_p]; save_file(PLACES_FILE, places_df)
+            refresh_caches(); st.success(f"Duikplaats '{new_p}' toegevoegd."); st.rerun()
+        else: st.warning("Leeg of al bestaand.")
     st.markdown("---")
-    st.subheader("Backup & Herstel")
+    st.markdown("#### Backup")
     import zipfile, os
-    if st.button("Download backup (zip)"):
+    if st.button("Maak backup (zip)", key="beheer_backup_make"):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as zipf:
             for f in [DUIKERS_FILE, PLACES_FILE, DUIKEN_FILE]:
-                if Path(f).exists():
-                    zipf.write(f, os.path.basename(f))
-        st.download_button(
-            "Download duikapp_backup.zip",
-            data=buffer.getvalue(),
-            file_name="duikapp_backup.zip",
-            mime="application/zip"
-        )
+                if Path(f).exists(): zipf.write(f, os.path.basename(f))
+        st.download_button("Download duikapp_backup.zip", data=buffer.getvalue(), file_name="duikapp_backup.zip",
+                           mime="application/zip", key="beheer_backup_dl")
 
 def main():
-    st.set_page_config(page_title="ANWW Duikapp", layout="wide")
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-
+    if "logged_in" not in st.session_state: st.session_state.logged_in = False
     if not st.session_state.logged_in:
-        login_page()
-        return
-
-    tabs = st.tabs(["Duiken invoeren", "Overzicht", "Afrekening", "Beheer lijsten"])
-    with tabs[0]:
-        page_duiken()
-    with tabs[1]:
-        page_overzicht()
-    with tabs[2]:
-        page_afrekening()
-    with tabs[3]:
-        page_beheer()
+        login_page(); return
+    tabs = st.tabs(["Duiken invoeren","Overzicht","Afrekening","Beheer lijsten"])
+    with tabs[0]: page_duiken()
+    with tabs[1]: page_overzicht()
+    with tabs[2]: page_afrekening()
+    with tabs[3]: page_beheer()
 
 if __name__ == "__main__":
     main()
