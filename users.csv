@@ -1,0 +1,2 @@
+username,name,role,salt,password_hash,created_at
+admin,Beheerder,admin,918d708d300b2b45ee0c23603d09cb36,ddcd06c411a3698587125d545b876216c79495165e602014a08bd935855f4bad,2025-08-31T09:09:51.297365
