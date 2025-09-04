@@ -12,7 +12,6 @@ USERS_FILE    = "users.xlsx"
 DUIKERS_FILE  = "duikers.xlsx"
 PLACES_FILE   = "duikplaatsen.xlsx"
 DUIKEN_FILE   = "duiken.xlsx"
-AUDIT_FILE    = "audit_log.xlsx"
 LOGO_FILE     = "logo.jpg"
 
 MAX_ATTEMPTS = 5
@@ -20,15 +19,15 @@ LOCK_MINUTES = 15
 
 st.set_page_config(page_title="ANWW Duikapp", layout="wide")
 
-# Minimal, robust styles (avoid complex HTML that might break render)
-st.markdown("""
+st.markdown('''
     <style>
     .stApp { background: #f7f9fc; }
     .appbar { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
     .badge { border:1px solid #e5e7eb; padding:4px 8px; border-radius:999px; font-size:0.9rem; background:#fff; }
     .logo { height:44px; border-radius:8px; }
+    .hint { font-size:0.9rem; opacity:.85; }
     </style>
-""", unsafe_allow_html=True)
+''', unsafe_allow_html=True)
 
 def init_file(file, columns, defaults=None):
     p = Path(file)
@@ -60,24 +59,6 @@ def load_duikers(): return init_file(DUIKERS_FILE, ["Naam"])
 def load_places(): return init_file(PLACES_FILE, ["Plaats"])
 @st.cache_data(show_spinner=False)
 def load_duiken(): return init_file(DUIKEN_FILE, ["Datum","Plaats","Duiker"])
-@st.cache_data(show_spinner=False)
-def load_audit(): return init_file(AUDIT_FILE, ["TimestampUTC","User","Action","Details","SessionId"])
-
-def append_audit(user, action, details=""):
-    try:
-        df = pd.read_excel(AUDIT_FILE, engine="openpyxl")
-    except Exception:
-        df = pd.DataFrame(columns=["TimestampUTC","User","Action","Details","SessionId"])
-    row = {
-        "TimestampUTC": dt.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-        "User": user or "",
-        "Action": action,
-        "Details": details,
-        "SessionId": st.session_state.get("session_id","")
-    }
-    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-    df.to_excel(AUDIT_FILE, index=False, engine="openpyxl")
-    load_audit.clear()
 
 def refresh_all():
     load_users.clear(); load_duikers.clear(); load_places.clear(); load_duiken.clear()
@@ -100,9 +81,6 @@ def set_password(users_df, username, new_password):
     users_df.loc[users_df["Username"]==username, "LockedUntil"] = ""
     persist_users(users_df); refresh_all()
 
-def migrate_plaintext_to_hash(users_df, username, password):
-    set_password(users_df, username, password)
-
 def is_locked(row):
     lu = str(row.get("LockedUntil","") or "")
     if not lu: return False, None
@@ -122,7 +100,6 @@ def register_failed_attempt(users_df, username):
         locked_until = until.isoformat(timespec="seconds")
         users_df.loc[users_df["Username"]==username, "LockedUntil"] = locked_until
         users_df.loc[users_df["Username"]==username, "FailedAttempts"] = 0
-        append_audit(username, "account_locked", f"until={locked_until}")
     persist_users(users_df); refresh_all()
     return attempts, locked_until
 
@@ -132,41 +109,39 @@ def clear_lock(users_df, username):
     persist_users(users_df); refresh_all()
 
 def login_page():
-    st.markdown(f"""
+    st.markdown(f'''
     <style>
     .stApp {{ background: url('{LOGO_FILE}') no-repeat center center fixed !important; background-size: cover !important; }}
     .login-box {{ background: rgba(255,255,255,.9); padding: 2rem; border-radius: 16px; width: 360px; margin: 12vh auto; }}
-    </style>""", unsafe_allow_html=True)
+    </style>''', unsafe_allow_html=True)
     st.markdown("<div class='login-box'><h2>ANWW Duikapp</h2><p>Log in</p>", unsafe_allow_html=True)
     u = st.text_input("Gebruikersnaam", key="login_user")
     p = st.text_input("Wachtwoord", type="password", key="login_pw")
     if st.button("Login", type="primary", use_container_width=True, key="login_btn"):
         users = load_users()
         if u not in users["Username"].astype(str).tolist():
-            st.error("Onbekende gebruiker"); append_audit(u, "login_failed", "unknown_user")
+            st.error("Onbekende gebruiker")
         else:
             row = users[users["Username"]==u].iloc[0]
             locked, until = is_locked(row)
             if locked:
                 st.error(f"Account geblokkeerd tot {until.strftime('%Y-%m-%d %H:%M:%S')} UTC.")
-                append_audit(u, "login_blocked", f"locked_until={until.isoformat()}")
             else:
                 if verify_password(row, p):
                     if str(row.get("Password","") or "") != "":
-                        migrate_plaintext_to_hash(users, u, p); users = load_users(); row = users[users["Username"]==u].iloc[0]; append_audit(u, "password_migrated", "legacy->bcrypt")
+                        set_password(users, u, p)
                     clear_lock(users, u)
                     st.session_state.logged_in = True
                     st.session_state.username = u
                     st.session_state.role = row["Role"]
-                    append_audit(u, "login_success", f"role={row['Role']}")
                     st.rerun()
                 else:
                     attempts, locked_until = register_failed_attempt(users, u)
                     if locked_until:
-                        st.error(f"Teveel foute pogingen. Geblokkeerd tot {locked_until} UTC."); append_audit(u, "login_failed_locked", f"locked_until={locked_until}")
+                        st.error(f"Teveel foute pogingen. Geblokkeerd tot {locked_until} UTC.")
                     else:
                         left = MAX_ATTEMPTS - attempts
-                        st.error(f"Onjuist wachtwoord. Nog {left} poging(en) over."); append_audit(u, "login_failed", f"attempts={attempts}")
+                        st.error(f"Onjuist wachtwoord. Nog {left} poging(en) over.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 def appbar(suffix: str):
@@ -177,7 +152,6 @@ def appbar(suffix: str):
         st.markdown(f"<div class='badge'>{st.session_state.get('username','?')} · {st.session_state.get('role','?')}</div>", unsafe_allow_html=True)
     with col3:
         if st.button("Uitloggen", key=f"logout_{suffix}"):
-            append_audit(st.session_state.get('username',''), "logout", "")
             st.session_state.clear(); st.rerun()
 
 def page_duiken():
@@ -194,26 +168,58 @@ def page_duiken():
             np = st.text_input("Nieuwe duikplaats", key="duiken_nieuwe_plaats")
             if st.button("Voeg duikplaats toe", key="duiken_btn_plaats_toevoegen"):
                 if np and np not in plaatsen:
-                    places_df.loc[len(places_df)] = [np]; save_file(PLACES_FILE, places_df); refresh_all(); append_audit(st.session_state.get('username',''), "place_added", np); st.success(f"Duikplaats '{np}' toegevoegd."); st.rerun()
+                    places_df.loc[len(places_df)] = [np]; save_file(PLACES_FILE, places_df); refresh_all(); st.success(f"Duikplaats '{np}' toegevoegd."); st.rerun()
                 else: st.warning("Voer een unieke naam in.")
     sel = st.multiselect("Kies duikers", duikers, key="duiken_sel_duikers")
     if role == "admin":
         nd = st.text_input("Nieuwe duiker toevoegen", key="duiken_nieuwe_duiker")
         if st.button("Voeg duiker toe", key="duiken_btn_duiker_toevoegen"):
             if nd and nd not in duikers:
-                duikers_df.loc[len(duikers_df)] = [nd]; save_file(DUIKERS_FILE, duikers_df); refresh_all(); append_audit(st.session_state.get('username',''), "diver_added", nd); st.success(f"Duiker '{nd}' toegevoegd."); st.rerun()
+                duikers_df.loc[len(duikers_df)] = [nd]; save_file(DUIKERS_FILE, duikers_df); refresh_all(); st.success(f"Duiker '{nd}' toegevoegd."); st.rerun()
             else: st.warning("Voer een unieke naam in.")
+    st.markdown("##### Geselecteerde duikers (nog niet opgeslagen)")
+    if sel:
+        st.write(", ".join(sel))
+        rm_sel = st.multiselect("Verwijder uit selectie", sel, key="duiken_sel_remove")
+        if st.button("Verwijder gekozen uit selectie", key="duiken_btn_remove_from_sel"):
+            st.session_state['duiken_sel_duikers'] = [d for d in sel if d not in rm_sel]
+            st.experimental_rerun()
+    else:
+        st.markdown("<span class='hint'>Nog geen duikers geselecteerd.</span>", unsafe_allow_html=True)
     if st.button("Opslaan duik(en)", type="primary", disabled=(not plaats or len(sel)==0), key="duiken_opslaan"):
         duiken_df = load_duiken().copy()
         for naam in sel: duiken_df.loc[len(duiken_df)] = [datum, plaats, naam]
         duiken_df["Datum"] = pd.to_datetime(duiken_df["Datum"]).dt.date
-        save_file(DUIKEN_FILE, duiken_df); refresh_all(); append_audit(st.session_state.get('username',''), "dives_saved", f"{len(sel)} @ {plaats} on {datum.strftime('%d/%m/%Y')}"); st.success(f"{len(sel)} duik(en) opgeslagen.")
+        save_file(DUIKEN_FILE, duiken_df); refresh_all()
+        st.success(f"{len(sel)} duik(en) opgeslagen voor {plaats} op {datum.strftime('%d/%m/%Y')}.")
+    if plaats:
+        duiken_df2 = load_duiken().copy()
+        if not duiken_df2.empty:
+            duiken_df2["Datum"] = pd.to_datetime(duiken_df2["Datum"]).dt.date
+            mask = (duiken_df2["Datum"]==datum) & (duiken_df2["Plaats"]==plaats)
+            huidige = duiken_df2.loc[mask].copy()
+            st.markdown("##### Bestaande inschrijvingen voor deze duik")
+            if huidige.empty:
+                st.markdown("<span class='hint'>Nog geen opgeslagen inschrijvingen voor deze datum/plaats.</span>", unsafe_allow_html=True)
+            else:
+                huidige_view = huidige[["Duiker"]].rename(columns={"Duiker":"Aanwezige duiker"})
+                st.dataframe(huidige_view, use_container_width=True, hide_index=True, key="duiken_huidige_table")
+                rm_saved = st.multiselect("Selecteer duikers om te verwijderen uit deze duik", huidige["Duiker"].unique().tolist(), key="duiken_rm_saved")
+                if st.button("Verwijder geselecteerde uit deze duik", key="duiken_btn_rm_saved"):
+                    duiken_df2 = duiken_df2[~(mask & duiken_df2["Duiker"].isin(rm_saved))]
+                    save_file(DUIKEN_FILE, duiken_df2); refresh_all()
+                    st.success(f"Verwijderd: {len(rm_saved)} uit {plaats} op {datum.strftime('%d/%m/%Y')}.")
+                    st.experimental_rerun()
 
 def page_overzicht():
     appbar("overzicht")
     df = load_duiken().copy()
     if df.empty: st.info("Nog geen duiken geregistreerd."); return
     df["Datum"] = pd.to_datetime(df["Datum"]).dt.date
+    unique_duiken = df.dropna(subset=["Plaats"]).copy()
+    unique_duiken = unique_duiken.drop_duplicates(subset=["Datum","Plaats"]).sort_values("Datum", ascending=False)
+    duik_labels = [f"{d.strftime('%d/%m/%Y')} · {p}" for d,p in zip(unique_duiken["Datum"], unique_duiken["Plaats"])]
+    keuze = st.selectbox("Specifieke duik (optioneel)", ["Alle duiken"] + duik_labels, index=0, key="overzicht_specifieke_duik")
     c1,c2,c3 = st.columns([1,1,2])
     with c1:
         min_d,max_d = df["Datum"].min(), df["Datum"].max()
@@ -224,17 +230,34 @@ def page_overzicht():
     with c3:
         duikers = ["Alle"] + sorted(df["Duiker"].dropna().unique().tolist())
         dfilt = st.selectbox("Duiker", duikers, index=0, key="overzicht_duiker")
-    start,end = rng if isinstance(rng, tuple) else (df["Datum"].min(), df["Datum"].max())
-    f = df[(df["Datum"]>=start)&(df["Datum"]<=end)].copy()
-    if pf!="Alle": f = f[f["Plaats"]==pf]
-    if dfilt!="Alle": f = f[f["Duiker"]==dfilt]
-    f = f.sort_values(["Datum","Plaats","Duiker"])
-    view = f.copy(); view["Datum"] = pd.to_datetime(view["Datum"]).dt.strftime("%d/%m/%Y")
-    st.dataframe(view, use_container_width=True, hide_index=True, key="overzicht_table")
-    out = io.BytesIO()
-    with pd.ExcelWriter(out, engine="openpyxl") as w: f.to_excel(w, index=False, sheet_name="Duiken")
-    st.download_button("Download CSV", data=f.to_csv(index=False).encode("utf-8"), file_name="duiken_export.csv", mime="text/csv", key="overzicht_csv")
-    st.download_button("Download Excel", data=out.getvalue(), file_name="duiken_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="overzicht_xlsx")
+    if keuze != "Alle duiken":
+        idx = duik_labels.index(keuze)
+        target_d = unique_duiken.iloc[idx]["Datum"]
+        target_p = unique_duiken.iloc[idx]["Plaats"]
+        f = df[(df["Datum"]==target_d) & (df["Plaats"]==target_p)].copy()
+        f = f.sort_values(["Duiker"])
+        st.markdown(f"**Aanwezigen voor {target_p} op {target_d.strftime('%d/%m/%Y')}:**")
+        if f.empty:
+            st.info("Geen inschrijvingen gevonden voor deze duik.")
+        else:
+            namen = ", ".join(sorted(f["Duiker"].astype(str).tolist()))
+            st.write(namen)
+            view = f.copy(); view["Datum"] = view["Datum"].apply(lambda x: x.strftime("%d/%m/%Y"))
+            st.dataframe(view, use_container_width=True, hide_index=True, key="overzicht_specifiek_table")
+    else:
+        start,end = rng if isinstance(rng, tuple) else (df["Datum"].min(), df["Datum"].max())
+        f = df[(df["Datum"]>=start)&(df["Datum"]<=end)].copy()
+        if pf!="Alle": f = f[f["Plaats"]==pf]
+        if dfilt!="Alle": f = f[f["Duiker"]==dfilt]
+        f = f.sort_values(["Datum","Plaats","Duiker"])
+        view = f.copy(); view["Datum"] = pd.to_datetime(view["Datum"]).dt.strftime("%d/%m/%Y")
+        st.dataframe(view, use_container_width=True, hide_index=True, key="overzicht_table")
+        out = io.BytesIO()
+        with pd.ExcelWriter(out, engine="openpyxl") as w: f.to_excel(w, index=False, sheet_name="Duiken")
+        st.download_button("Download CSV", data=f.to_csv(index=False).encode("utf-8"),
+            file_name="duiken_export.csv", mime="text/csv", key="overzicht_csv")
+        st.download_button("Download Excel", data=out.getvalue(), file_name="duiken_export.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="overzicht_xlsx")
 
 def page_afrekening():
     appbar("afrekening")
@@ -257,33 +280,14 @@ def page_afrekening():
     per = s.groupby("Duiker").size().reset_index(name="AantalDuiken")
     per["Bedrag"] = (per["AantalDuiken"]*bedrag).round(2)
     st.dataframe(per, use_container_width=True, hide_index=True, key="afr_table")
+    total = per["Bedrag"].sum()
+    st.metric("Totaal uit te keren", f"€ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X","."))
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as w:
         per.to_excel(w, index=False, sheet_name="Afrekening")
         s.sort_values(["Datum","Plaats","Duiker"]).to_excel(w, index=False, sheet_name="Detail")
-    st.download_button("⬇️ Download Afrekening (Excel)", data=out.getvalue(), file_name="Afrekening.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="afr_xlsx")
-
-def page_profiel():
-    appbar("profiel")
-    st.markdown("### Profiel")
-    st.write(f"Gebruiker: **{st.session_state.get('username','?')}** · Rol: **{st.session_state.get('role','?')}**")
-    st.markdown("#### Wachtwoord wijzigen")
-    with st.form(key="pw_change_form"):
-        cur = st.text_input("Huidig wachtwoord", type="password", key="pw_cur")
-        new1 = st.text_input("Nieuw wachtwoord", type="password", key="pw_new1")
-        new2 = st.text_input("Bevestig nieuw wachtwoord", type="password", key="pw_new2")
-        submitted = st.form_submit_button("Wijzig wachtwoord")
-    if submitted:
-        users = load_users().copy()
-        u = st.session_state.get("username","")
-        row = users[users["Username"]==u].iloc[0]
-        if not verify_password(row, cur):
-            st.error("Huidig wachtwoord klopt niet.")
-        elif not new1 or new1 != new2:
-            st.error("Nieuwe wachtwoorden zijn leeg of komen niet overeen.")
-        else:
-            set_password(users, u, new1)
-            st.success("Wachtwoord succesvol gewijzigd.")
+    st.download_button("⬇️ Download Afrekening (Excel)", data=out.getvalue(), file_name="Afrekening.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="afr_xlsx")
 
 def page_beheer():
     appbar("beheer")
@@ -337,7 +341,6 @@ def page_beheer():
             else: st.warning("Leeg of al bestaand.")
     with tabs[3]:
         st.subheader("Backup (zip)")
-        # Eenvoudiger en stabieler: 1 download button die bij klik de zip maakt
         import zipfile, os
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
@@ -353,18 +356,16 @@ def main():
     if not st.session_state.logged_in: login_page(); return
     role = st.session_state.get("role","user")
     if role == "admin":
-        tabs = st.tabs(["Duiken invoeren","Overzicht","Afrekening","Profiel","Beheer"])
+        tabs = st.tabs(["Duiken invoeren","Overzicht","Afrekening","Beheer"])
         with tabs[0]: page_duiken()
         with tabs[1]: page_overzicht()
         with tabs[2]: page_afrekening()
-        with tabs[3]: page_profiel()
-        with tabs[4]: page_beheer()
+        with tabs[3]: page_beheer()
     else:
-        tabs = st.tabs(["Duiken invoeren","Overzicht","Afrekening","Profiel"])
+        tabs = st.tabs(["Duiken invoeren","Overzicht","Afrekening"])
         with tabs[0]: page_duiken()
         with tabs[1]: page_overzicht()
         with tabs[2]: page_afrekening()
-        with tabs[3]: page_profiel()
 
 if __name__ == "__main__":
     main()
